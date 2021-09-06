@@ -1,4 +1,3 @@
-from collections import defaultdict
 import math
 import time
 import random
@@ -38,20 +37,27 @@ USE_CUDA = torch.cuda.is_available()
 #       into an easy-to-use format with "<unk>" symbols. If we were using other
 #       data we would have to do pre-processing and consider how to choose
 #       unknown words, etc.
-w2i = defaultdict(lambda: len(w2i))
-S = w2i["<s>"]
-UNK = w2i["<unk>"]
-def read_dataset(filename):
+w2i = {}
+S = w2i["<s>"] = 0
+UNK = w2i["<unk>"] = 1
+def get_wid(w2i, x, add_vocab=True):
+  if x not in w2i:
+    if add_vocab:
+      w2i[x] = len(w2i)
+    else:
+      return UNK
+  return w2i[x]
+def read_dataset(filename, add_vocab):
   with open(filename, "r") as f:
     for line in f:
-      yield [w2i[x] for x in line.strip().split(" ")]
+      yield [get_wid(w2i, x, add_vocab) for x in line.strip().split(" ")]
 
 # Read in the data
-train = list(read_dataset("../data/ptb-text/train.txt"))
-w2i = defaultdict(lambda: UNK, w2i)
-dev = list(read_dataset("../data/ptb-text/valid.txt"))
+train = list(read_dataset("../data/ptb-text/train.txt", add_vocab=True))
+dev = list(read_dataset("../data/ptb-text/valid.txt", add_vocab=False))
 i2w = {v: k for k, v in w2i.items()}
 nwords = len(w2i)
+print(nwords)
 
 # Initialize the model and the optimizer
 model = FNN_LM(nwords=nwords, emb_size=EMB_SIZE, hid_size=HID_SIZE, num_hist=N)
@@ -98,8 +104,9 @@ def generate_sent():
   sent = []
   while True:
     logits = calc_score_of_histories([hist])
-    prob = nn.functional.softmax(logits)
-    next_word = prob.multinomial().data[0,0]
+    prob = nn.functional.softmax(logits, 1)
+    multinom = prob.multinomial(1)
+    next_word = multinom.data.item()
     if next_word == S or len(sent) == MAX_LEN:
       break
     sent.append(next_word)
